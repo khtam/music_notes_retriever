@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="only light">
+  <meta name="darkreader-lock"><!-- keep engraved notation black-on-white under Dark Reader -->
+  <title>Music Notes Creator</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎹</text></svg>">
+</head>
+<body>
+  <header>
+    <h1>🎹 Music Notes Creator</h1>
+    <p class="tagline">Turn a song into piano sheet music — from an audio file, a video, or YouTube.</p>
+  </header>
+
+  <main>
+    <section class="card" id="input-card">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="youtube" role="tab">YouTube URL</button>
+        <button class="tab" data-tab="upload" role="tab">Upload file</button>
+      </div>
+
+      <form id="job-form">
+        <div class="tab-panel" data-panel="youtube">
+          <input type="url" id="url" name="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off">
+          <p class="hint">Only transcribe audio you have the right to use.</p>
+        </div>
+        <div class="tab-panel hidden" data-panel="upload">
+          <input type="file" id="file" name="file"
+                 accept=".wav,.mp3,.m4a,.aac,.flac,.ogg,.opus,.wma,.aiff,.aif,.mp4,.mov,.mkv,.webm,.avi,.m4v,.ts,.flv,audio/*,video/*">
+          <p class="hint">Audio or video — the soundtrack is extracted automatically.</p>
+        </div>
+
+        <details class="options">
+          <summary>Transcription options</summary>
+          <div class="options-grid">
+            <label>Title on score
+              <input type="text" name="title" placeholder="(from source)">
+            </label>
+            <label>Hand split point
+              <select name="split_point">
+                <option value="G4">G4 — melody-heavy right hand</option>
+                <option value="C4" selected>C4 — middle C (default)</option>
+                <option value="G3">G3 — busy left hand</option>
+                <option value="C3">C3 — bass notes only in left hand</option>
+              </select>
+            </label>
+            <label>Tempo override (BPM)
+              <input type="number" name="tempo" min="30" max="300" step="1" placeholder="auto-detect">
+            </label>
+            <label>Minimum note length (ms)
+              <input type="number" name="min_note_length" min="30" max="1000" step="10" value="120">
+            </label>
+            <label>Onset sensitivity
+              <select name="onset_threshold">
+                <option value="0.3">More notes (0.3)</option>
+                <option value="0.5" selected>Balanced (0.5)</option>
+                <option value="0.7">Fewer, surer notes (0.7)</option>
+              </select>
+            </label>
+          </div>
+        </details>
+
+        <button type="submit" id="submit-btn">Transcribe to sheet music</button>
+      </form>
+    </section>
+
+    <section class="card hidden" id="progress-card">
+      <div class="spinner"></div>
+      <p id="progress-stage">Queued…</p>
+      <p class="hint">Transcription takes roughly 10–60 seconds per minute of audio.</p>
+    </section>
+
+    <section class="card error hidden" id="error-card">
+      <h2>Something went wrong</h2>
+      <p id="error-message"></p>
+      <button id="error-retry">Try again</button>
+    </section>
+
+    <section class="hidden" id="result">
+      <div class="card result-header">
+        <div>
+          <h2 id="result-title"></h2>
+          <p id="result-meta" class="hint"></p>
+        </div>
+        <div class="actions">
+          <a id="download-xml" class="button" download>Download MusicXML</a>
+          <a id="download-midi" class="button" download>Download MIDI</a>
+          <button id="new-job" class="button secondary">New transcription</button>
+        </div>
+      </div>
+      <div class="card sheet" id="sheet-container"></div>
+      <p class="hint center">Machine transcription is a starting point — open the MusicXML in
+        <a href="https://musescore.org" target="_blank" rel="noopener">MuseScore</a> to fine-tune rhythms and voicing.</p>
+    </section>
+  </main>
+
+  <script src="opensheetmusicdisplay.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

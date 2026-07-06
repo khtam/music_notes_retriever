@@ -40,6 +40,10 @@ class Job:
     key_name: Optional[str] = None
     n_notes: Optional[int] = None
     duration_seconds: Optional[float] = None
+    sections: list[str] = field(default_factory=list)
+    structure_method: str = ""
+    n_lyric_words: int = 0
+    lyrics_language: str = ""
     musicxml_path: Optional[str] = field(default=None, repr=False)
     midi_path: Optional[str] = field(default=None, repr=False)
 
@@ -81,6 +85,10 @@ def _run_job(job: Job, source: str, options: Options) -> None:
             key_name=info.key_name,
             n_notes=info.n_notes,
             duration_seconds=info.duration_seconds,
+            sections=info.sections,
+            structure_method=info.structure_method,
+            n_lyric_words=info.n_lyric_words,
+            lyrics_language=info.lyrics_language,
             musicxml_path=str(info.musicxml_path),
             midi_path=str(info.midi_path),
         )
@@ -97,6 +105,9 @@ async def create_job(
     min_note_length: float = Form(120.0),
     onset_threshold: float = Form(0.5),
     title: Optional[str] = Form(None),
+    lyrics: bool = Form(True),
+    structure: bool = Form(True),
+    dedup: bool = Form(True),
 ):
     if not url and not file:
         raise HTTPException(400, "Provide a YouTube URL or upload a file.")
@@ -137,6 +148,9 @@ async def create_job(
         min_note_length_ms=min_note_length,
         onset_threshold=onset_threshold,
         title=title,
+        lyrics=lyrics,
+        structure=structure,
+        dedup_repeats=dedup,
     )
     with jobs_lock:
         jobs[job.id] = job

@@ -48,6 +48,9 @@ $("#job-form").addEventListener("submit", async (e) => {
     const value = form[name].value;
     if (value) data.append(name, value);
   }
+  for (const name of ["lyrics", "structure", "dedup"]) {
+    data.append(name, form[name].checked ? "true" : "false");
+  }
 
   show("progress");
   $("#progress-stage").textContent = "Uploading…";
@@ -105,7 +108,19 @@ async function renderResult(job) {
   if (job.key_name) meta.push(job.key_name);
   if (job.n_notes) meta.push(`${job.n_notes} notes`);
   if (job.duration_seconds) meta.push(`${Math.round(job.duration_seconds)}s of audio`);
+  if (job.n_lyric_words) {
+    meta.push(`${job.n_lyric_words} lyric words` + (job.lyrics_language ? ` (${job.lyrics_language})` : ""));
+  }
   $("#result-meta").textContent = meta.join("  ·  ");
+
+  const structureEl = $("#result-structure");
+  if (job.sections && job.sections.length) {
+    structureEl.textContent = "Structure: " + job.sections.join("  ·  ");
+    structureEl.classList.remove("hidden");
+  } else {
+    structureEl.classList.add("hidden");
+    structureEl.textContent = "";
+  }
 
   $("#download-xml").href = `/api/jobs/${job.id}/musicxml`;
   $("#download-midi").href = `/api/jobs/${job.id}/midi`;

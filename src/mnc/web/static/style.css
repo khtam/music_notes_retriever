@@ -90,6 +90,20 @@ input:focus, select:focus { outline: 2px solid var(--accent); border-color: tran
 .options-grid label { font-size: 0.85rem; color: var(--muted); display: block; }
 .options-grid input, .options-grid select { margin-top: 0.3rem; }
 
+.options-checks { margin-top: 1rem; display: grid; gap: 0.45rem; }
+.options-checks .check {
+  font-size: 0.85rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.options-checks input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 button[type="submit"], .button {
   display: inline-block;
   width: 100%;

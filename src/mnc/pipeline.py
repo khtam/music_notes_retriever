@@ -1,4 +1,4 @@
-"""End-to-end orchestration: source -> audio -> notes -> engraved score."""
+"""End-to-end orchestration: source -> audio -> notes + lyrics + structure -> score."""
 
 from __future__ import annotations
 
@@ -23,6 +23,12 @@ class Options:
     onset_threshold: float = 0.5
     frame_threshold: float = 0.3
     title: Optional[str] = None
+    lyrics: bool = True                 # transcribe vocals and print words under the melody
+    structure: bool = True              # label verse/chorus/bridge sections
+    dedup_repeats: bool = True          # collapse near-identical repeated sections
+    whisper_model: str = "small"        # faster-whisper size: tiny/base/small/medium/large-v3
+    llm_provider: Optional[str] = None  # anthropic | openai | none; None = auto-detect from env
+    llm_model: Optional[str] = None
 
 
 def slugify(text: str) -> str:
@@ -63,6 +69,36 @@ def run(
                 "clearer pitched content, or lower --min-note-length."
             )
 
+        # Vocals are optional extras: if Whisper or the LLM fails, the score
+        # still ships — just without words or section labels.
+        lyrics = None
+        sections: list = []
+        structure_method = ""
+        if options.lyrics or options.structure:
+            report("Transcribing lyrics")
+            try:
+                from .lyrics import transcribe_lyrics
+
+                lyrics = transcribe_lyrics(wav_path, model_size=options.whisper_model)
+            except Exception as exc:
+                report(f"Lyric transcription failed ({exc}); continuing without lyrics")
+                lyrics = None
+        if options.structure and lyrics and lyrics.lines:
+            report("Analyzing song structure")
+            from .llm import LLMError, get_llm_client
+            from .structure import analyze_structure
+
+            try:
+                llm = get_llm_client(options.llm_provider, options.llm_model)
+            except LLMError as exc:
+                report(f"LLM unavailable ({exc}); using heuristic structure analysis")
+                llm = None
+            duration = max(
+                max((ev.end for ev in events), default=0.0),
+                lyrics.lines[-1].end,
+            )
+            sections, structure_method = analyze_structure(lyrics.lines, duration, llm)
+
         report("Engraving score")
         info = export_score(
             events,
@@ -71,6 +107,10 @@ def run(
             basename=slugify(title),
             title=title,
             split_midi=options.split_midi,
+            lyrics=lyrics if options.lyrics else None,
+            sections=sections,
+            dedup=options.dedup_repeats,
+            structure_method=structure_method,
         )
     report("Done")
     return info

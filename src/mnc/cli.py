@@ -54,6 +54,20 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--onset-threshold", type=float, default=0.5,
                    help="Note-onset sensitivity, 0-1; lower catches more notes (default: 0.5)")
     t.add_argument("--title", default=None, help="Title printed on the score")
+    t.add_argument("--no-lyrics", action="store_true",
+                   help="Skip vocal transcription (no words under the melody)")
+    t.add_argument("--no-structure", action="store_true",
+                   help="Skip verse/chorus section labeling")
+    t.add_argument("--no-dedup", action="store_true",
+                   help="Engrave repeated sections in full instead of collapsing them")
+    t.add_argument("--whisper-model", default="small", metavar="SIZE",
+                   choices=["tiny", "base", "small", "medium", "large-v3"],
+                   help="faster-whisper model for lyrics: tiny/base/small/medium/large-v3 (default: small)")
+    t.add_argument("--llm", default=None, metavar="PROVIDER",
+                   help="LLM for structure analysis: anthropic, openai, or none "
+                        "(default: auto-detect from ANTHROPIC_API_KEY / OPENAI_API_KEY)")
+    t.add_argument("--llm-model", default=None,
+                   help="Model override for the chosen LLM provider")
 
     s = sub.add_parser("serve", help="Run the web app")
     s.add_argument("--host", default="127.0.0.1")
@@ -82,6 +96,12 @@ def main(argv: list[str] | None = None) -> int:
         min_note_length_ms=args.min_note_length,
         onset_threshold=args.onset_threshold,
         title=args.title,
+        lyrics=not args.no_lyrics,
+        structure=not args.no_structure,
+        dedup_repeats=not args.no_dedup,
+        whisper_model=args.whisper_model,
+        llm_provider=args.llm,
+        llm_model=args.llm_model,
     )
     try:
         info = run(args.source, output_dir, options, progress=lambda stage: print(f"* {stage}"))
@@ -92,7 +112,17 @@ def main(argv: list[str] | None = None) -> int:
     print(
         f"\n{info.title}\n"
         f"  notes: {info.n_notes} | tempo: {info.tempo_bpm:.0f} BPM | "
-        f"key: {info.key_name} | length: {info.duration_seconds:.0f}s\n"
+        f"key: {info.key_name} | length: {info.duration_seconds:.0f}s"
+    )
+    if info.n_lyric_words:
+        language = f" ({info.lyrics_language})" if info.lyrics_language else ""
+        print(f"  lyrics: {info.n_lyric_words} words{language}")
+    if info.sections:
+        method = f" [{info.structure_method}]" if info.structure_method else ""
+        print(f"  structure{method}:")
+        for line in info.sections:
+            print(f"    - {line}")
+    print(
         f"  sheet music: {info.musicxml_path}\n"
         f"  midi:        {info.midi_path}\n\n"
         f"Open the .musicxml in MuseScore (free) to view/print, or run "

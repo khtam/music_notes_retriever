@@ -61,6 +61,14 @@
               </select>
             </label>
           </div>
+          <div class="options-checks">
+            <label class="check"><input type="checkbox" name="lyrics" checked>
+              Lyrics under the melody (Whisper vocal transcription)</label>
+            <label class="check"><input type="checkbox" name="structure" checked>
+              Label sections (verse / chorus / bridge)</label>
+            <label class="check"><input type="checkbox" name="dedup" checked>
+              Collapse repeated sections (“Chorus: play mm. X–Y”)</label>
+          </div>
         </details>
 
         <button type="submit" id="submit-btn">Transcribe to sheet music</button>
@@ -84,6 +92,7 @@
         <div>
           <h2 id="result-title"></h2>
           <p id="result-meta" class="hint"></p>
+          <p id="result-structure" class="hint hidden"></p>
         </div>
         <div class="actions">
           <a id="download-xml" class="button" download>Download MusicXML</a>

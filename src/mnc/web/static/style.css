@@ -66,7 +66,7 @@ main {
   font-weight: 600;
 }
 
-input[type="url"], input[type="text"], input[type="number"], input[type="file"], select, textarea {
+input[type="url"], input[type="text"], input[type="number"], input[type="password"], input[type="file"], select, textarea {
   width: 100%;
   padding: 0.65rem 0.75rem;
   border: 1px solid #d8d2c6;
@@ -113,6 +113,17 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
   margin: 0;
   accent-color: var(--accent);
 }
+
+.llm-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+  margin: 0.7rem 0 0 1.6rem; /* indent under its checkbox */
+}
+.llm-fields label { font-size: 0.85rem; color: var(--muted); display: block; }
+.llm-fields input, .llm-fields select { margin-top: 0.3rem; }
+.llm-fields .llm-hint { grid-column: 1 / -1; margin-top: 0; }
+.llm-fields.disabled { opacity: 0.45; }
 
 button[type="submit"], .button {
   display: inline-block;
@@ -180,5 +191,6 @@ button[type="submit"]:hover, .button:hover { background: var(--accent-dark); }
 
 @media (max-width: 640px) {
   .options-grid { grid-template-columns: 1fr; }
+  .llm-fields { grid-template-columns: 1fr; }
   #result .result-header { flex-direction: column; align-items: stretch; }
 }

@@ -1,7 +1,8 @@
 """Provider-agnostic LLM access for musical analysis (song-structure labeling).
 
 The pipeline only ever talks to the small `LLMClient` interface below, so
-providers are interchangeable. Configuration is env-driven:
+providers are interchangeable. An API key can be passed per request (the web
+form) and beats the environment; otherwise configuration is env-driven:
 
     MNC_LLM_PROVIDER   anthropic | openai | none   (default: auto-detect by API key)
     MNC_LLM_MODEL      model override for the chosen provider
@@ -53,15 +54,18 @@ def _extract_json(text: str) -> dict:
 class AnthropicClient(LLMClient):
     name = "anthropic"
 
-    def __init__(self, model: Optional[str] = None):
+    def __init__(self, model: Optional[str] = None, api_key: Optional[str] = None):
         try:
             import anthropic
         except ImportError as exc:
             raise LLMError(
                 "The 'anthropic' package is not installed. Run: pip install -e '.[llm]'"
             ) from exc
+        api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise LLMError("No Anthropic API key (paste one in the form or set ANTHROPIC_API_KEY)")
         self._anthropic = anthropic
-        self.client = anthropic.Anthropic()
+        self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model or DEFAULT_ANTHROPIC_MODEL
 
     def generate_json(self, system: str, prompt: str, schema: dict) -> dict:
@@ -87,7 +91,12 @@ class OpenAIClient(LLMClient):
 
     name = "openai"
 
-    def __init__(self, model: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
         try:
             import openai
         except ImportError as exc:
@@ -95,7 +104,13 @@ class OpenAIClient(LLMClient):
                 "The 'openai' package is not installed. Run: pip install -e '.[llm]'"
             ) from exc
         self._openai = openai
-        self.client = openai.OpenAI(base_url=base_url or os.getenv("OPENAI_BASE_URL"))
+        try:
+            self.client = openai.OpenAI(
+                api_key=api_key or None,  # None falls back to OPENAI_API_KEY
+                base_url=base_url or os.getenv("OPENAI_BASE_URL"),
+            )
+        except openai.OpenAIError as exc:  # e.g. no key anywhere
+            raise LLMError(f"OpenAI client unavailable: {exc}") from exc
         self.model = model or DEFAULT_OPENAI_MODEL
 
     def generate_json(self, system: str, prompt: str, schema: dict) -> dict:
@@ -114,26 +129,40 @@ class OpenAIClient(LLMClient):
         return _extract_json(content)
 
 
+def resolve_provider(provider: Optional[str] = None, api_key: Optional[str] = None) -> Optional[str]:
+    """Normalize the provider choice; None means heuristic-only analysis.
+
+    With no explicit provider, an ad-hoc key is sniffed by prefix (Anthropic
+    keys start with 'sk-ant-'), then the environment decides.
+    """
+    provider = (provider or os.getenv("MNC_LLM_PROVIDER") or "").strip().lower()
+    if provider in ("none", "off", "disabled"):
+        return None
+    if provider:
+        if provider in ("anthropic", "openai"):
+            return provider
+        raise LLMError(f"Unknown LLM provider {provider!r}; use 'anthropic', 'openai', or 'none'")
+    if api_key:
+        return "anthropic" if api_key.startswith("sk-ant-") else "openai"
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    if os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_BASE_URL"):
+        return "openai"
+    return None
+
+
 def get_llm_client(
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    api_key: Optional[str] = None,
 ) -> Optional[LLMClient]:
     """Build the configured LLM client, or None when analysis should be heuristic-only."""
-    provider = (provider or os.getenv("MNC_LLM_PROVIDER") or "").strip().lower()
+    api_key = (api_key or "").strip() or None
+    provider = resolve_provider(provider, api_key)
     model = model or os.getenv("MNC_LLM_MODEL")
 
-    if not provider:  # auto-detect from available credentials
-        if os.getenv("ANTHROPIC_API_KEY"):
-            provider = "anthropic"
-        elif os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_BASE_URL"):
-            provider = "openai"
-        else:
-            return None
-
-    if provider in ("none", "off", "disabled"):
+    if provider is None:
         return None
     if provider == "anthropic":
-        return AnthropicClient(model=model)
-    if provider == "openai":
-        return OpenAIClient(model=model)
-    raise LLMError(f"Unknown LLM provider {provider!r}; use 'anthropic', 'openai', or 'none'")
+        return AnthropicClient(model=model, api_key=api_key)
+    return OpenAIClient(model=model, api_key=api_key)

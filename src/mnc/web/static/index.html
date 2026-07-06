@@ -35,7 +35,7 @@
 
         <label class="lyrics-input">Lyrics <span class="optional">(optional, recommended)</span>
           <textarea name="lyrics_text" rows="5"
-                    placeholder="Paste the song's lyrics — one line per sung line.&#10;They replace the automatic transcription and are aligned to the audio."></textarea>
+                    placeholder="Paste the song's lyrics — one line per sung line.&#10;They replace the automatic transcription and are aligned to the audio.&#10;Section tags like [Verse 1] or (Chorus) are ignored automatically."></textarea>
         </label>
 
         <details class="options">
@@ -73,6 +73,24 @@
               Label sections (verse / chorus / bridge)</label>
             <label class="check"><input type="checkbox" name="dedup" checked>
               Collapse repeated sections (“Chorus: play mm. X–Y”)</label>
+            <label class="check"><input type="checkbox" name="llm" id="llm-check" checked>
+              Use an LLM for smarter section labels (falls back to a heuristic)</label>
+          </div>
+          <div class="llm-fields" id="llm-fields">
+            <label>LLM provider
+              <select name="llm_provider">
+                <option value="" selected>Auto-detect (from key)</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </label>
+            <label>API key
+              <input type="password" name="llm_api_key" placeholder="sk-…  (blank = server’s key)"
+                     autocomplete="off" spellcheck="false">
+            </label>
+            <p class="hint llm-hint">The key is used once for this transcription and never stored.
+              Leave it blank to use a key from the server’s environment; with no key at all,
+              sections are still labeled heuristically.</p>
           </div>
         </details>
 

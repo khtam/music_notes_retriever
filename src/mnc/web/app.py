@@ -111,6 +111,9 @@ async def create_job(
     lyrics_text: Optional[str] = Form(None),
     structure: bool = Form(True),
     dedup: bool = Form(True),
+    llm: bool = Form(True),
+    llm_provider: Optional[str] = Form(None),
+    llm_api_key: Optional[str] = Form(None),
 ):
     if not url and not file:
         raise HTTPException(400, "Provide a YouTube URL or upload a file.")
@@ -155,6 +158,9 @@ async def create_job(
         lyrics_text=lyrics_text,
         structure=structure,
         dedup_repeats=dedup,
+        # The key rides in Options only — Job (and the status endpoint) never sees it.
+        llm_provider="none" if not llm else (llm_provider or "").strip() or None,
+        llm_api_key=(llm_api_key or "").strip() or None,
     )
     with jobs_lock:
         jobs[job.id] = job

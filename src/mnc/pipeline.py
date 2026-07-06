@@ -30,6 +30,7 @@ class Options:
     whisper_model: str = "small"        # faster-whisper size: tiny/base/small/medium/large-v3
     llm_provider: Optional[str] = None  # anthropic | openai | none; None = auto-detect from env
     llm_model: Optional[str] = None
+    llm_api_key: Optional[str] = None   # per-request key (web form); beats the environment
 
 
 def slugify(text: str) -> str:
@@ -112,7 +113,7 @@ def run(
             from .structure import analyze_structure
 
             try:
-                llm = get_llm_client(options.llm_provider, options.llm_model)
+                llm = get_llm_client(options.llm_provider, options.llm_model, options.llm_api_key)
             except LLMError as exc:
                 report(f"LLM unavailable ({exc}); using heuristic structure analysis")
                 llm = None

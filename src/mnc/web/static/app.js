@@ -27,6 +27,18 @@ document.querySelectorAll(".tab").forEach((btn) => {
   });
 });
 
+// --- LLM options ------------------------------------------------------
+const llmCheck = $("#llm-check");
+function syncLlmFields() {
+  const off = !llmCheck.checked;
+  $("#llm-fields").classList.toggle("disabled", off);
+  document.querySelectorAll("#llm-fields select, #llm-fields input").forEach((el) => {
+    el.disabled = off;
+  });
+}
+llmCheck.addEventListener("change", syncLlmFields);
+syncLlmFields();
+
 // --- job submission ---------------------------------------------------
 let pollTimer = null;
 
@@ -50,8 +62,13 @@ $("#job-form").addEventListener("submit", async (e) => {
   }
   const lyricsText = form.lyrics_text.value;
   if (lyricsText.trim()) data.append("lyrics_text", lyricsText);
-  for (const name of ["lyrics", "structure", "dedup"]) {
+  for (const name of ["lyrics", "structure", "dedup", "llm"]) {
     data.append(name, form[name].checked ? "true" : "false");
+  }
+  if (form.llm.checked) {
+    if (form.llm_provider.value) data.append("llm_provider", form.llm_provider.value);
+    const key = form.llm_api_key.value.trim();
+    if (key) data.append("llm_api_key", key);
   }
 
   show("progress");
@@ -118,7 +135,10 @@ async function renderResult(job) {
 
   const structureEl = $("#result-structure");
   if (job.sections && job.sections.length) {
-    structureEl.textContent = "Structure: " + job.sections.join("  ·  ");
+    // Show which engine labeled the sections ("llm:anthropic" / "heuristic"),
+    // so a pasted API key visibly took effect.
+    const method = job.structure_method ? ` (${job.structure_method})` : "";
+    structureEl.textContent = `Structure${method}: ` + job.sections.join("  ·  ");
     structureEl.classList.remove("hidden");
   } else {
     structureEl.classList.add("hidden");

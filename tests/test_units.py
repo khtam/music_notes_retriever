@@ -6,6 +6,7 @@
 import unittest
 
 from mnc.cli import parse_pitch
+from mnc.llm import LLMError, resolve_provider
 from mnc.lyrics import (
     Lyrics,
     LyricLine,
@@ -13,6 +14,7 @@ from mnc.lyrics import (
     align_user_lyrics,
     lyrics_from_onsets,
     parse_lyric_lines,
+    strip_lyric_tags,
 )
 from mnc.pipeline import slugify
 from mnc.score import _make_remap, _plan_repeats, _quantize, _to_chord_sequence, build_score
@@ -189,6 +191,97 @@ class TestParseLyricLines(unittest.TestCase):
     def test_punctuation_only_tokens_dropped(self):
         self.assertEqual(parse_lyric_lines("la — la"), [["la", "la"]])
 
+    def test_section_tag_lines_dropped(self):
+        text = "[Verse 1]\nhello world\n[Chorus: Some Artist]\nsing along\n"
+        self.assertEqual(parse_lyric_lines(text), [["hello", "world"], ["sing", "along"]])
+
+
+class TestStripLyricTags(unittest.TestCase):
+    def test_bracketed_tags_removed_anywhere(self):
+        self.assertEqual(strip_lyric_tags("[Verse 1]").strip(), "")
+        self.assertEqual(strip_lyric_tags("{Chorus}").strip(), "")
+        self.assertEqual(strip_lyric_tags("la la la [x2]").strip(), "la la la")
+
+    def test_paren_section_and_repeat_tags_removed(self):
+        self.assertEqual(strip_lyric_tags("(Chorus)").strip(), "")
+        self.assertEqual(strip_lyric_tags("(Verse 2)").strip(), "")
+        self.assertEqual(strip_lyric_tags("(Pre-Chorus: Artist)").strip(), "")
+        self.assertEqual(strip_lyric_tags("la la la (x2)").strip(), "la la la")
+        self.assertEqual(strip_lyric_tags("la la la (repeat 3 times)").strip(), "la la la")
+
+    def test_backing_vocals_in_parens_kept(self):
+        self.assertEqual(strip_lyric_tags("hold me close (ooh ooh)"), "hold me close (ooh ooh)")
+
+    def test_bare_heading_lines_dropped(self):
+        self.assertEqual(strip_lyric_tags("Chorus:"), "")
+        self.assertEqual(strip_lyric_tags("VERSE 2"), "")
+        self.assertEqual(strip_lyric_tags("Bridge"), "")
+
+    def test_lyric_line_using_section_word_kept(self):
+        line = "standing on the bridge at midnight"
+        self.assertEqual(strip_lyric_tags(line), line)
+
+    def test_unbalanced_bracket_headings_dropped(self):
+        # The bug the user hit: a stray bracket from a bad copy-paste hid the tag.
+        self.assertEqual(strip_lyric_tags("Verse 1]"), "")
+        self.assertEqual(strip_lyric_tags("[Pre Chorus"), "")
+        self.assertEqual(strip_lyric_tags("**Chorus**"), "")
+        self.assertEqual(strip_lyric_tags("Verse 1: Some Artist]"), "")
+
+    def test_cjk_section_tags_dropped(self):
+        self.assertEqual(strip_lyric_tags("【副歌】").strip(), "")
+        self.assertEqual(strip_lyric_tags("（副歌）").strip(), "")
+        self.assertEqual(strip_lyric_tags("副歌："), "")
+        self.assertEqual(strip_lyric_tags("主歌 1"), "")
+
+    def test_cjk_lyric_line_kept(self):
+        line = "我来到祢面前"
+        self.assertEqual(strip_lyric_tags(line), line)
+
+
+class TestResolveProvider(unittest.TestCase):
+    def _clear_env(self):
+        import os
+
+        for var in ("MNC_LLM_PROVIDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL"):
+            os.environ.pop(var, None)
+
+    def setUp(self):
+        import os
+
+        self._saved = {
+            var: os.environ.get(var)
+            for var in ("MNC_LLM_PROVIDER", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL")
+        }
+        self._clear_env()
+
+    def tearDown(self):
+        import os
+
+        for var, value in self._saved.items():
+            if value is None:
+                os.environ.pop(var, None)
+            else:
+                os.environ[var] = value
+
+    def test_off_switch_wins(self):
+        self.assertIsNone(resolve_provider("none", api_key="sk-ant-xyz"))
+
+    def test_explicit_provider(self):
+        self.assertEqual(resolve_provider("anthropic"), "anthropic")
+        self.assertEqual(resolve_provider("openai", api_key="sk-ant-xyz"), "openai")
+
+    def test_key_prefix_sniffing(self):
+        self.assertEqual(resolve_provider(api_key="sk-ant-xyz"), "anthropic")
+        self.assertEqual(resolve_provider(api_key="sk-proj-xyz"), "openai")
+
+    def test_no_provider_no_key_means_heuristic(self):
+        self.assertIsNone(resolve_provider())
+
+    def test_unknown_provider_raises(self):
+        with self.assertRaises(LLMError):
+            resolve_provider("gemini")
+
 
 class TestAlignUserLyrics(unittest.TestCase):
     def test_matched_words_inherit_reference_times(self):
@@ -227,6 +320,24 @@ class TestAlignUserLyrics(unittest.TestCase):
         self.assertEqual(starts[:3], [1.0, 2.0, 3.0])
         self.assertEqual(starts, sorted(starts))
         self.assertGreater(starts[3], 3.0)
+
+    def test_long_unmatched_tail_spreads_across_reference(self):
+        # Whisper anchors only the first few words but keeps singing to 100 s.
+        # The user's many trailing words must spread toward the reference end,
+        # not bunch up 0.4 s apart right after the last anchor (the bug that
+        # dragged every late section mark to the start of the score).
+        ref_specs = [(float(i + 1), f"m{i}") for i in range(15)]   # matched, 1–15 s
+        ref_specs += [(20.0 + i, f"x{i}") for i in range(80)]      # sung tail to ~99 s
+        reference = _timed(*ref_specs)
+        user = " ".join(f"m{i}" for i in range(15)) + " " + " ".join(f"w{i}" for i in range(40))
+        lyrics = align_user_lyrics(user, reference)
+        self.assertIsNotNone(lyrics)
+        starts = [w.start for w in lyrics.words]
+        self.assertEqual(starts, sorted(starts))          # monotonic
+        # Old behavior put the last word at 15 + 40*0.4 = 31 s. Spreading uses
+        # the reference span (ends ~99.4 s), so the tail must reach far past that.
+        self.assertGreater(starts[-1], 60.0)
+        self.assertLessEqual(starts[-1], reference.words[-1].end + 0.01)
 
 
 class TestLyricsFromOnsets(unittest.TestCase):

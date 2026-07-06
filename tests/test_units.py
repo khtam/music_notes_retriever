@@ -6,7 +6,14 @@
 import unittest
 
 from mnc.cli import parse_pitch
-from mnc.lyrics import Lyrics, LyricLine, TimedWord
+from mnc.lyrics import (
+    Lyrics,
+    LyricLine,
+    TimedWord,
+    align_user_lyrics,
+    lyrics_from_onsets,
+    parse_lyric_lines,
+)
 from mnc.pipeline import slugify
 from mnc.score import _make_remap, _plan_repeats, _quantize, _to_chord_sequence, build_score
 from mnc.structure import Section, analyze_heuristic, analyze_structure
@@ -162,6 +169,78 @@ class TestStructureLLM(unittest.TestCase):
         self.assertEqual([s.label for s in sections], ["Verse 1", "Chorus"])
         self.assertEqual(sections[0].start, 0.0)
         self.assertEqual(sections[1].end, 20.0)
+
+
+def _timed(*specs) -> Lyrics:
+    """specs: (start, text) with 0.4 s words."""
+    return Lyrics(words=[TimedWord(start=s, end=s + 0.4, text=t) for s, t in specs])
+
+
+class TestParseLyricLines(unittest.TestCase):
+    def test_splits_lines_and_words(self):
+        self.assertEqual(
+            parse_lyric_lines("Hello there\n\nsecond line!\n"),
+            [["Hello", "there"], ["second", "line!"]],
+        )
+
+    def test_cjk_splits_per_character(self):
+        self.assertEqual(parse_lyric_lines("你好 world"), [["你", "好", "world"]])
+
+    def test_punctuation_only_tokens_dropped(self):
+        self.assertEqual(parse_lyric_lines("la — la"), [["la", "la"]])
+
+
+class TestAlignUserLyrics(unittest.TestCase):
+    def test_matched_words_inherit_reference_times(self):
+        reference = _timed((1.0, "twinkle"), (2.0, "twinkle"), (3.0, "little"), (4.0, "star"))
+        lyrics = align_user_lyrics("Twinkle, twinkle\nlittle star", reference)
+        self.assertIsNotNone(lyrics)
+        self.assertEqual([w.text for w in lyrics.words], ["Twinkle,", "twinkle", "little", "star"])
+        self.assertEqual([w.start for w in lyrics.words], [1.0, 2.0, 3.0, 4.0])
+        # User line breaks define the lines (better structure input than Whisper).
+        self.assertEqual([l.text for l in lyrics.lines], ["Twinkle, twinkle", "little star"])
+        self.assertEqual(lyrics.lines[1].start, 3.0)
+
+    def test_misheard_word_interpolates_between_anchors(self):
+        # Whisper heard "littlest are" where the real lyric is "little star".
+        reference = _timed((1.0, "twinkle"), (2.0, "twinkle"), (3.0, "littlest"),
+                           (4.0, "are"), (5.0, "how"), (6.0, "I"), (7.0, "wonder"))
+        lyrics = align_user_lyrics("twinkle twinkle little star how I wonder", reference)
+        self.assertIsNotNone(lyrics)
+        starts = [w.start for w in lyrics.words]
+        self.assertEqual(starts[0], 1.0)
+        self.assertEqual(starts[4], 5.0)  # "how" re-anchors
+        self.assertTrue(2.0 < starts[2] < starts[3] < 5.0)  # interpolated, in order
+        self.assertEqual(starts, sorted(starts))
+
+    def test_too_few_matches_returns_none(self):
+        reference = _timed((1.0, "completely"), (2.0, "unrelated"), (3.0, "transcription"))
+        self.assertIsNone(align_user_lyrics("some real lyrics that never matched", reference))
+
+    def test_empty_reference_returns_none(self):
+        self.assertIsNone(align_user_lyrics("la la la", Lyrics()))
+
+    def test_words_past_last_anchor_are_extrapolated(self):
+        reference = _timed((1.0, "one"), (2.0, "two"), (3.0, "three"))
+        lyrics = align_user_lyrics("one two three four five", reference)
+        starts = [w.start for w in lyrics.words]
+        self.assertEqual(starts[:3], [1.0, 2.0, 3.0])
+        self.assertEqual(starts, sorted(starts))
+        self.assertGreater(starts[3], 3.0)
+
+
+class TestLyricsFromOnsets(unittest.TestCase):
+    def test_one_word_per_onset(self):
+        lyrics = lyrics_from_onsets("la la\nla", [0.0, 1.0, 2.0, 3.0])
+        self.assertEqual([w.start for w in lyrics.words], [0.0, 1.0, 2.0])
+        self.assertEqual(len(lyrics.lines), 2)
+
+    def test_extra_words_dropped_when_onsets_run_out(self):
+        lyrics = lyrics_from_onsets("one two three four", [0.0, 1.0])
+        self.assertEqual([w.text for w in lyrics.words], ["one", "two"])
+
+    def test_no_onsets_yields_empty_lyrics(self):
+        self.assertFalse(lyrics_from_onsets("la la", []))
 
 
 class TestBuildScoreExtras(unittest.TestCase):

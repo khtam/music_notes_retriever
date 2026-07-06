@@ -24,6 +24,7 @@ class Options:
     frame_threshold: float = 0.3
     title: Optional[str] = None
     lyrics: bool = True                 # transcribe vocals and print words under the melody
+    lyrics_text: Optional[str] = None   # user-supplied lyrics; replaces Whisper's words
     structure: bool = True              # label verse/chorus/bridge sections
     dedup_repeats: bool = True          # collapse near-identical repeated sections
     whisper_model: str = "small"        # faster-whisper size: tiny/base/small/medium/large-v3
@@ -72,14 +73,36 @@ def run(
         # Vocals are optional extras: if Whisper or the LLM fails, the score
         # still ships — just without words or section labels.
         lyrics = None
+        lyrics_source = ""
         sections: list = []
         structure_method = ""
-        if options.lyrics or options.structure:
+        user_text = (options.lyrics_text or "").strip()
+        want_lyrics = options.lyrics or bool(user_text)
+        if user_text:
+            # The user's words are the truth; Whisper only supplies timing.
+            from .lyrics import align_user_lyrics, lyrics_from_onsets, transcribe_lyrics
+
+            report("Transcribing vocals to time your lyrics")
+            reference = None
+            try:
+                reference = transcribe_lyrics(wav_path, model_size=options.whisper_model)
+            except Exception as exc:
+                report(f"Vocal timing pass failed ({exc}); mapping lyrics to melody notes")
+            if reference:
+                lyrics = align_user_lyrics(user_text, reference)
+                if lyrics:
+                    lyrics_source = "aligned to vocals"
+            if lyrics is None:
+                onsets = [ev.start for ev in events if ev.pitch >= options.split_midi]
+                lyrics = lyrics_from_onsets(user_text, onsets)
+                lyrics_source = "mapped to melody notes"
+        elif options.lyrics or options.structure:
             report("Transcribing lyrics")
             try:
                 from .lyrics import transcribe_lyrics
 
                 lyrics = transcribe_lyrics(wav_path, model_size=options.whisper_model)
+                lyrics_source = "transcribed"
             except Exception as exc:
                 report(f"Lyric transcription failed ({exc}); continuing without lyrics")
                 lyrics = None
@@ -107,10 +130,11 @@ def run(
             basename=slugify(title),
             title=title,
             split_midi=options.split_midi,
-            lyrics=lyrics if options.lyrics else None,
+            lyrics=lyrics if want_lyrics else None,
             sections=sections,
             dedup=options.dedup_repeats,
             structure_method=structure_method,
+            lyrics_source=lyrics_source if want_lyrics else "",
         )
     report("Done")
     return info

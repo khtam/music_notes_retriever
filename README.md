@@ -14,7 +14,11 @@ MIDI downloads.
    neural network converts the audio into note events (pitch, onset, duration).
 3. **Lyrics** — [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
    transcribes the vocals with word-level timestamps; each word is attached
-   to the nearest melody note so it prints under the treble staff.
+   to the nearest melody note so it prints under the treble staff. Whisper
+   mishears sung words often, so you can also paste the real lyrics yourself
+   (web textarea or `--lyrics-file`): your words are aligned against the
+   Whisper timing and replace its text; if the vocals can't be transcribed at
+   all, the words are placed one per melody note instead.
 4. **Song structure** — the timed lyric lines are segmented into sections
    (Verse 1, Chorus, Bridge, ...). If an LLM is configured (Anthropic or any
    OpenAI-compatible provider) it does the labeling; otherwise a repeated-line
@@ -93,6 +97,8 @@ Outputs `<name>.musicxml` and `<name>.mid` next to the input (or into
 - `--tempo 120` — override the estimated tempo (BPM)
 - `--min-note-length 120` — drop notes shorter than this many milliseconds
 - `--title "My Song"` — title printed on the score
+- `--lyrics-file lyrics.txt` — use these lyrics (one line per sung line)
+  instead of Whisper's transcription; they are aligned to the audio
 - `--no-lyrics` / `--no-structure` / `--no-dedup` — turn off lyric
   transcription, section labeling, or repeat collapsing
 - `--whisper-model medium` — larger Whisper model for better lyrics (default: small)

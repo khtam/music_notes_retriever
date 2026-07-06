@@ -51,6 +51,7 @@ class ScoreInfo:
     structure_method: str = ""
     n_lyric_words: int = 0
     lyrics_language: str = ""
+    lyrics_source: str = ""  # "transcribed" | "aligned to vocals" | "mapped to melody notes"
 
 
 def _quantize(
@@ -347,6 +348,7 @@ def export_score(
     sections: Optional[list["Section"]] = None,
     dedup: bool = True,
     structure_method: str = "",
+    lyrics_source: str = "",
 ) -> ScoreInfo:
     output_dir.mkdir(parents=True, exist_ok=True)
     score, key_name, section_summary, n_lyric_words = build_score(
@@ -377,4 +379,5 @@ def export_score(
         structure_method=structure_method,
         n_lyric_words=n_lyric_words,
         lyrics_language=(lyrics.language if lyrics else ""),
+        lyrics_source=(lyrics_source if n_lyric_words else ""),
     )

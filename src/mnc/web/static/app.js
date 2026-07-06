@@ -48,6 +48,8 @@ $("#job-form").addEventListener("submit", async (e) => {
     const value = form[name].value;
     if (value) data.append(name, value);
   }
+  const lyricsText = form.lyrics_text.value;
+  if (lyricsText.trim()) data.append("lyrics_text", lyricsText);
   for (const name of ["lyrics", "structure", "dedup"]) {
     data.append(name, form[name].checked ? "true" : "false");
   }
@@ -109,7 +111,8 @@ async function renderResult(job) {
   if (job.n_notes) meta.push(`${job.n_notes} notes`);
   if (job.duration_seconds) meta.push(`${Math.round(job.duration_seconds)}s of audio`);
   if (job.n_lyric_words) {
-    meta.push(`${job.n_lyric_words} lyric words` + (job.lyrics_language ? ` (${job.lyrics_language})` : ""));
+    const details = [job.lyrics_language, job.lyrics_source].filter(Boolean).join(", ");
+    meta.push(`${job.n_lyric_words} lyric words` + (details ? ` (${details})` : ""));
   }
   $("#result-meta").textContent = meta.join("  ·  ");
 

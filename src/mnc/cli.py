@@ -56,6 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--title", default=None, help="Title printed on the score")
     t.add_argument("--no-lyrics", action="store_true",
                    help="Skip vocal transcription (no words under the melody)")
+    t.add_argument("--lyrics-file", type=Path, default=None, metavar="PATH",
+                   help="Text file with the song's lyrics (one line per sung line). "
+                        "Used instead of Whisper's transcription and aligned to the audio.")
     t.add_argument("--no-structure", action="store_true",
                    help="Skip verse/chorus section labeling")
     t.add_argument("--no-dedup", action="store_true",
@@ -83,6 +86,17 @@ def main(argv: list[str] | None = None) -> int:
 
     from .audio_input import is_url
 
+    lyrics_text = None
+    if args.lyrics_file is not None:
+        try:
+            lyrics_text = args.lyrics_file.expanduser().read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"error: cannot read lyrics file: {exc}", file=sys.stderr)
+            return 1
+        if not lyrics_text.strip():
+            print(f"error: lyrics file {args.lyrics_file} is empty", file=sys.stderr)
+            return 1
+
     if args.output_dir is not None:
         output_dir = args.output_dir
     elif is_url(args.source):
@@ -97,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         onset_threshold=args.onset_threshold,
         title=args.title,
         lyrics=not args.no_lyrics,
+        lyrics_text=lyrics_text,
         structure=not args.no_structure,
         dedup_repeats=not args.no_dedup,
         whisper_model=args.whisper_model,
@@ -115,8 +130,8 @@ def main(argv: list[str] | None = None) -> int:
         f"key: {info.key_name} | length: {info.duration_seconds:.0f}s"
     )
     if info.n_lyric_words:
-        language = f" ({info.lyrics_language})" if info.lyrics_language else ""
-        print(f"  lyrics: {info.n_lyric_words} words{language}")
+        details = ", ".join(x for x in (info.lyrics_language, info.lyrics_source) if x)
+        print(f"  lyrics: {info.n_lyric_words} words" + (f" ({details})" if details else ""))
     if info.sections:
         method = f" [{info.structure_method}]" if info.structure_method else ""
         print(f"  structure{method}:")

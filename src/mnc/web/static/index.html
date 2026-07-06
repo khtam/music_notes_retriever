@@ -33,6 +33,11 @@
           <p class="hint">Audio or video — the soundtrack is extracted automatically.</p>
         </div>
 
+        <label class="lyrics-input">Lyrics <span class="optional">(optional, recommended)</span>
+          <textarea name="lyrics_text" rows="5"
+                    placeholder="Paste the song's lyrics — one line per sung line.&#10;They replace the automatic transcription and are aligned to the audio."></textarea>
+        </label>
+
         <details class="options">
           <summary>Transcription options</summary>
           <div class="options-grid">
@@ -63,7 +68,7 @@
           </div>
           <div class="options-checks">
             <label class="check"><input type="checkbox" name="lyrics" checked>
-              Lyrics under the melody (Whisper vocal transcription)</label>
+              Lyrics under the melody (auto-transcribed unless pasted above)</label>
             <label class="check"><input type="checkbox" name="structure" checked>
               Label sections (verse / chorus / bridge)</label>
             <label class="check"><input type="checkbox" name="dedup" checked>

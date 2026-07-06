@@ -44,6 +44,7 @@ class Job:
     structure_method: str = ""
     n_lyric_words: int = 0
     lyrics_language: str = ""
+    lyrics_source: str = ""
     musicxml_path: Optional[str] = field(default=None, repr=False)
     midi_path: Optional[str] = field(default=None, repr=False)
 
@@ -89,6 +90,7 @@ def _run_job(job: Job, source: str, options: Options) -> None:
             structure_method=info.structure_method,
             n_lyric_words=info.n_lyric_words,
             lyrics_language=info.lyrics_language,
+            lyrics_source=info.lyrics_source,
             musicxml_path=str(info.musicxml_path),
             midi_path=str(info.midi_path),
         )
@@ -106,6 +108,7 @@ async def create_job(
     onset_threshold: float = Form(0.5),
     title: Optional[str] = Form(None),
     lyrics: bool = Form(True),
+    lyrics_text: Optional[str] = Form(None),
     structure: bool = Form(True),
     dedup: bool = Form(True),
 ):
@@ -149,6 +152,7 @@ async def create_job(
         onset_threshold=onset_threshold,
         title=title,
         lyrics=lyrics,
+        lyrics_text=lyrics_text,
         structure=structure,
         dedup_repeats=dedup,
     )

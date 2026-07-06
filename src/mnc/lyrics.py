@@ -2,13 +2,23 @@
 
 Words carry start times so they can be attached to melody notes; lines keep
 segment-level timing for song-structure analysis.
+
+When the user supplies the lyrics as text (Whisper mishears sung words often),
+their words replace the transcription but still need times. Two strategies:
+  1. align_user_lyrics — match the user's words against Whisper's timed words
+     and inherit the timestamps; unmatched words interpolate between matches.
+  2. lyrics_from_onsets — no usable transcription at all: place one word per
+     melody-note onset, in order.
 """
 
 from __future__ import annotations
 
+import difflib
+import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 
 @dataclass
@@ -78,4 +88,144 @@ def transcribe_lyrics(wav_path: Path, model_size: str = "small") -> Lyrics:
             cleaned = word.word.strip()
             if cleaned:
                 lyrics.words.append(TimedWord(start=float(word.start), end=float(word.end), text=cleaned))
+    return lyrics
+
+
+# --- user-provided lyrics ----------------------------------------------------
+
+# CJK scripts don't use spaces; each character is a sung syllable, so split
+# them into single-character tokens on both sides of the alignment.
+_CJK = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯豈-﫿]")
+
+MIN_ANCHORS = 3            # alignment needs at least this many matched words...
+MIN_ANCHOR_FRACTION = 0.2  # ...and at least this share of the user's words
+FALLBACK_WORD_STEP = 0.4   # seconds per word when extrapolating past the anchors
+WORD_FALLBACK_DURATION = 0.3
+
+
+def _split_token(token: str) -> list[str]:
+    """'hello' -> ['hello']; '你好there' -> ['你', '好', 'there']."""
+    if not _CJK.search(token):
+        return [token]
+    out: list[str] = []
+    buf = ""
+    for ch in token:
+        if _CJK.match(ch):
+            if buf:
+                out.append(buf)
+                buf = ""
+            out.append(ch)
+        else:
+            buf += ch
+    if buf:
+        out.append(buf)
+    return out
+
+
+def _clean(token: str) -> str:
+    """Normalized form used for matching: lowercase, letters/digits only."""
+    return re.sub(r"[^\w]+", "", token.lower())
+
+
+def parse_lyric_lines(text: str) -> list[list[str]]:
+    """User text -> display tokens per non-empty line (CJK split per character,
+    pure-punctuation tokens dropped)."""
+    lines = []
+    for raw_line in text.splitlines():
+        tokens = [t for word in raw_line.split() for t in _split_token(word) if _clean(t)]
+        if tokens:
+            lines.append(tokens)
+    return lines
+
+
+def align_user_lyrics(text: str, reference: Lyrics) -> Optional[Lyrics]:
+    """Time the user's lyrics by aligning them to a Whisper transcription.
+
+    Matched words (anchors) inherit the reference timestamps; words between
+    anchors interpolate linearly, words before/after the outermost anchors are
+    spaced FALLBACK_WORD_STEP apart. Returns None when too few words match to
+    trust the timing (caller should fall back to lyrics_from_onsets).
+    """
+    token_lines = parse_lyric_lines(text)
+    flat = [t for line in token_lines for t in line]
+    if not flat or not reference.words:
+        return None
+
+    # Split reference words the same way so CJK sequences compare per character.
+    ref_tokens: list[TimedWord] = []
+    for word in reference.words:
+        parts = [p for p in _split_token(word.text) if _clean(p)]
+        span = (word.end - word.start) / max(len(parts), 1)
+        for i, part in enumerate(parts):
+            ref_tokens.append(TimedWord(start=word.start + i * span, end=word.start + (i + 1) * span, text=part))
+
+    user_norm = [_clean(t) for t in flat]
+    ref_norm = [_clean(w.text) for w in ref_tokens]
+    matcher = difflib.SequenceMatcher(None, user_norm, ref_norm, autojunk=False)
+    anchors: dict[int, TimedWord] = {}
+    for a, b, size in matcher.get_matching_blocks():
+        for k in range(size):
+            anchors[a + k] = ref_tokens[b + k]
+    if len(anchors) < max(MIN_ANCHORS, int(MIN_ANCHOR_FRACTION * len(flat))):
+        return None
+
+    starts: list[float] = [0.0] * len(flat)
+    ends: list[float] = [0.0] * len(flat)
+    indices = sorted(anchors)
+    for i in indices:
+        starts[i] = anchors[i].start
+        ends[i] = max(anchors[i].end, anchors[i].start)
+    first, last = indices[0], indices[-1]
+    for i in range(first - 1, -1, -1):  # before the first anchor
+        starts[i] = max(starts[i + 1] - FALLBACK_WORD_STEP, 0.0)
+    for i in range(len(flat)):
+        if i in anchors or i < first:
+            continue
+        if i > last:  # past the last anchor
+            starts[i] = starts[i - 1] + FALLBACK_WORD_STEP
+        else:  # between two anchors: linear in word index
+            prev_i = max(j for j in indices if j < i)
+            next_i = min(j for j in indices if j > i)
+            frac = (i - prev_i) / (next_i - prev_i)
+            starts[i] = starts[prev_i] + frac * (starts[next_i] - starts[prev_i])
+    for i in range(len(flat)):
+        if i not in anchors:
+            ends[i] = starts[i] + WORD_FALLBACK_DURATION
+
+    lyrics = Lyrics(language=reference.language)
+    pos = 0
+    for tokens in token_lines:
+        line_start, line_end = starts[pos], ends[pos + len(tokens) - 1]
+        for token in tokens:
+            lyrics.words.append(TimedWord(start=starts[pos], end=ends[pos], text=token))
+            pos += 1
+        lyrics.lines.append(LyricLine(start=line_start, end=max(line_end, line_start), text=" ".join(tokens)))
+    return lyrics
+
+
+def lyrics_from_onsets(text: str, onsets: list[float]) -> Lyrics:
+    """Last-resort timing: the i-th lyric word lands on the i-th melody onset.
+
+    Words beyond the available onsets are dropped (the score reports the
+    attached-word count, so the shortfall is visible).
+    """
+    times = sorted(set(onsets))
+    lyrics = Lyrics()
+    pos = 0
+    for tokens in parse_lyric_lines(text):
+        placed: list[str] = []
+        line_start = None
+        for token in tokens:
+            if pos >= len(times):
+                break
+            start = times[pos]
+            end = times[pos + 1] if pos + 1 < len(times) else start + WORD_FALLBACK_DURATION
+            lyrics.words.append(TimedWord(start=start, end=end, text=token))
+            placed.append(token)
+            line_start = start if line_start is None else line_start
+            pos += 1
+        if placed:
+            lyrics.lines.append(LyricLine(start=line_start, end=lyrics.words[-1].end, text=" ".join(placed)))
+        if pos >= len(times):
+            break
     return lyrics

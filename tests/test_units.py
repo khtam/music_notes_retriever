@@ -6,7 +6,7 @@
 import unittest
 
 from mnc.cli import parse_pitch
-from mnc.llm import LLMError, resolve_provider
+from mnc.llm import PROVIDERS, LLMError, get_llm_client, resolve_provider
 from mnc.lyrics import (
     Lyrics,
     LyricLine,
@@ -280,7 +280,51 @@ class TestResolveProvider(unittest.TestCase):
 
     def test_unknown_provider_raises(self):
         with self.assertRaises(LLMError):
-            resolve_provider("gemini")
+            resolve_provider("wolfram")
+
+    def test_registry_providers_resolve_to_themselves(self):
+        for provider_id in PROVIDERS:
+            self.assertEqual(resolve_provider(provider_id), provider_id)
+
+    def test_env_key_auto_detects_regional_provider(self):
+        import os
+
+        os.environ["DEEPSEEK_API_KEY"] = "sk-test"
+        try:
+            self.assertEqual(resolve_provider(), "deepseek")
+        finally:
+            os.environ.pop("DEEPSEEK_API_KEY", None)
+
+
+class TestProviderRegistry(unittest.TestCase):
+    def test_every_spec_is_well_formed(self):
+        for provider_id, spec in PROVIDERS.items():
+            self.assertEqual(spec.id, provider_id)
+            self.assertIn(spec.group, ("major", "regional", "local"))
+            self.assertIn(spec.client, ("anthropic", "openai"))
+            if spec.client == "openai" and provider_id not in ("openai", "custom"):
+                self.assertTrue(spec.base_url, f"{provider_id} should pin a base_url")
+            if provider_id not in ("custom",):
+                self.assertTrue(spec.default_model, f"{provider_id} should have a default model")
+
+    def test_get_llm_client_builds_openai_client_with_provider_base_url(self):
+        client = get_llm_client("deepseek", api_key="sk-test")
+        self.assertEqual(client.name, "openai")
+        self.assertEqual(client.model, "deepseek-chat")
+        self.assertEqual(str(client.client.base_url).rstrip("/"), "https://api.deepseek.com")
+
+    def test_get_llm_client_local_needs_no_key(self):
+        client = get_llm_client("local")
+        self.assertEqual(client.name, "openai")
+        self.assertEqual(client.model, "llama3.1")
+
+    def test_get_llm_client_regional_without_key_raises(self):
+        with self.assertRaises(LLMError):
+            get_llm_client("deepseek")
+
+    def test_get_llm_client_custom_without_base_url_raises(self):
+        with self.assertRaises(LLMError):
+            get_llm_client("custom", api_key="sk-test")
 
 
 class TestAlignUserLyrics(unittest.TestCase):

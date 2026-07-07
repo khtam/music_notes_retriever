@@ -78,14 +78,20 @@
           </div>
           <div class="llm-fields" id="llm-fields">
             <label>LLM provider
-              <select name="llm_provider">
+              <select name="llm_provider" id="llm-provider">
                 <option value="" selected>Auto-detect (from key)</option>
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openai">OpenAI</option>
               </select>
             </label>
-            <label>API key
-              <input type="password" name="llm_api_key" placeholder="sk-…  (blank = server’s key)"
+            <label id="llm-key-label">API key <a id="llm-docs-link" href="#" target="_blank" rel="noopener" class="hidden">Get a key →</a>
+              <input type="password" name="llm_api_key" id="llm-api-key" placeholder="sk-…  (blank = server’s key)"
+                     autocomplete="off" spellcheck="false">
+            </label>
+            <label>Model
+              <input type="text" name="llm_model" id="llm-model" placeholder="(provider default)"
+                     autocomplete="off" spellcheck="false">
+            </label>
+            <label id="llm-base-url-row" class="hidden">Base URL
+              <input type="text" name="llm_base_url" id="llm-base-url" placeholder="http://localhost:11434/v1"
                      autocomplete="off" spellcheck="false">
             </label>
             <p class="hint llm-hint">The key is used once for this transcription and never stored.

@@ -29,6 +29,9 @@ document.querySelectorAll(".tab").forEach((btn) => {
 
 // --- LLM options ------------------------------------------------------
 const llmCheck = $("#llm-check");
+const GROUP_LABELS = { major: "Major players", regional: "Low-cost & regional", local: "Local & custom" };
+let providers = [];
+
 function syncLlmFields() {
   const off = !llmCheck.checked;
   $("#llm-fields").classList.toggle("disabled", off);
@@ -38,6 +41,53 @@ function syncLlmFields() {
 }
 llmCheck.addEventListener("change", syncLlmFields);
 syncLlmFields();
+
+function syncProviderFields() {
+  const spec = providers.find((p) => p.id === $("#llm-provider").value);
+  const keyInput = $("#llm-api-key");
+  const docsLink = $("#llm-docs-link");
+  const baseUrlRow = $("#llm-base-url-row");
+  const modelInput = $("#llm-model");
+
+  keyInput.placeholder = spec && spec.key_prefix ? `${spec.key_prefix}  (blank = server’s key)` : "blank = server’s key";
+  keyInput.disabled = !llmCheck.checked || (spec ? spec.needs_key === false : false);
+
+  if (spec && spec.docs_url) {
+    docsLink.href = spec.docs_url;
+    docsLink.classList.remove("hidden");
+  } else {
+    docsLink.classList.add("hidden");
+  }
+
+  baseUrlRow.classList.toggle("hidden", !(spec && spec.editable_base_url));
+  $("#llm-base-url").value = (spec && spec.base_url) || "";
+
+  modelInput.placeholder = spec && spec.default_model ? spec.default_model : "(provider default)";
+}
+
+async function loadProviders() {
+  try {
+    const res = await fetch("/api/providers");
+    providers = await res.json();
+  } catch (err) {
+    return; // provider list is a UX nicety; the form still works without it
+  }
+  const select = $("#llm-provider");
+  for (const group of ["major", "regional", "local"]) {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = GROUP_LABELS[group];
+    for (const spec of providers.filter((p) => p.group === group)) {
+      const option = document.createElement("option");
+      option.value = spec.id;
+      option.textContent = spec.label;
+      optgroup.appendChild(option);
+    }
+    select.appendChild(optgroup);
+  }
+  syncProviderFields();
+}
+$("#llm-provider").addEventListener("change", syncProviderFields);
+loadProviders();
 
 // --- job submission ---------------------------------------------------
 let pollTimer = null;
@@ -69,6 +119,10 @@ $("#job-form").addEventListener("submit", async (e) => {
     if (form.llm_provider.value) data.append("llm_provider", form.llm_provider.value);
     const key = form.llm_api_key.value.trim();
     if (key) data.append("llm_api_key", key);
+    const model = form.llm_model.value.trim();
+    if (model) data.append("llm_model", model);
+    const baseUrl = form.llm_base_url.value.trim();
+    if (baseUrl) data.append("llm_base_url", baseUrl);
   }
 
   show("progress");

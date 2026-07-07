@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..audio_input import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, is_url
 from ..cli import parse_pitch
+from ..llm import PROVIDERS
 from ..pipeline import Options, run
 
 JOBS_ROOT = Path.home() / ".cache" / "music-notes-creator" / "jobs"
@@ -98,6 +99,11 @@ def _run_job(job: Job, source: str, options: Options) -> None:
         _set(job, status="error", stage="Failed", error=str(exc))
 
 
+@app.get("/api/providers")
+def list_providers():
+    return [spec.public() for spec in PROVIDERS.values()]
+
+
 @app.post("/api/jobs")
 async def create_job(
     url: Optional[str] = Form(None),
@@ -114,6 +120,8 @@ async def create_job(
     llm: bool = Form(True),
     llm_provider: Optional[str] = Form(None),
     llm_api_key: Optional[str] = Form(None),
+    llm_model: Optional[str] = Form(None),
+    llm_base_url: Optional[str] = Form(None),
 ):
     if not url and not file:
         raise HTTPException(400, "Provide a YouTube URL or upload a file.")
@@ -161,6 +169,8 @@ async def create_job(
         # The key rides in Options only — Job (and the status endpoint) never sees it.
         llm_provider="none" if not llm else (llm_provider or "").strip() or None,
         llm_api_key=(llm_api_key or "").strip() or None,
+        llm_model=(llm_model or "").strip() or None,
+        llm_base_url=(llm_base_url or "").strip() or None,
     )
     with jobs_lock:
         jobs[job.id] = job

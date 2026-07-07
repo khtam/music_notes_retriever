@@ -67,10 +67,16 @@ def main(argv: list[str] | None = None) -> int:
                    choices=["tiny", "base", "small", "medium", "large-v3"],
                    help="faster-whisper model for lyrics: tiny/base/small/medium/large-v3 (default: small)")
     t.add_argument("--llm", default=None, metavar="PROVIDER",
-                   help="LLM for structure analysis: anthropic, openai, or none "
-                        "(default: auto-detect from ANTHROPIC_API_KEY / OPENAI_API_KEY)")
+                   help="LLM for structure analysis: anthropic, openai, google, deepseek, qwen, "
+                        "moonshot, zhipu, xai, groq, openrouter, local, custom, or none "
+                        "(default: auto-detect from an API key in the environment)")
     t.add_argument("--llm-model", default=None,
                    help="Model override for the chosen LLM provider")
+    t.add_argument("--llm-api-key", default=None,
+                   help="API key for the chosen LLM provider (default: from the environment)")
+    t.add_argument("--llm-base-url", default=None,
+                   help="Endpoint override, e.g. for --llm local/custom or any "
+                        "OpenAI-compatible server")
 
     s = sub.add_parser("serve", help="Run the web app")
     s.add_argument("--host", default="127.0.0.1")
@@ -117,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         whisper_model=args.whisper_model,
         llm_provider=args.llm,
         llm_model=args.llm_model,
+        llm_api_key=args.llm_api_key,
+        llm_base_url=args.llm_base_url,
     )
     try:
         info = run(args.source, output_dir, options, progress=lambda stage: print(f"* {stage}"))

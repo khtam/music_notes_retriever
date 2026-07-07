@@ -55,21 +55,34 @@ python3.11 -m venv .venv
 
 Everything works without an LLM (a lyric-repetition heuristic labels the
 sections), but a language model does a noticeably better job of telling
-verses from choruses. Install the `[llm]` extra and set one of:
+verses from choruses. Install the `[llm]` extra, then either pick a provider
+and paste an API key in the web app's "Transcription options" panel, or set
+one of these environment variables:
 
 ```bash
 export ANTHROPIC_API_KEY=...           # uses Claude (claude-opus-4-8)
 # or
 export OPENAI_API_KEY=...              # uses OpenAI (gpt-4o-mini)
+# or a low-cost / regional provider (all speak the OpenAI API):
+export DEEPSEEK_API_KEY=...            # DeepSeek
+export DASHSCOPE_API_KEY=...           # Alibaba Qwen
+export MOONSHOT_API_KEY=...            # Moonshot (Kimi)
+export ZHIPU_API_KEY=...               # Zhipu (GLM)
+export GROQ_API_KEY=...                # Groq
+export OPENROUTER_API_KEY=...          # OpenRouter
+export GEMINI_API_KEY=...              # Google Gemini
+export XAI_API_KEY=...                 # xAI Grok
 # or any OpenAI-compatible server (Ollama, vLLM, LM Studio, ...):
 export OPENAI_BASE_URL=http://localhost:11434/v1
 export MNC_LLM_MODEL=llama3.1          # model name on that server
 ```
 
 The provider is auto-detected from whichever key is present; override with
-`MNC_LLM_PROVIDER=anthropic|openai|none` and `MNC_LLM_MODEL=<model>`, or the
-`--llm` / `--llm-model` CLI flags. With nothing configured, the heuristic
-fallback is used automatically.
+`MNC_LLM_PROVIDER=<id>` (anthropic, openai, google, deepseek, qwen, moonshot,
+zhipu, xai, groq, openrouter, local, custom, or none), `MNC_LLM_MODEL=<model>`,
+and `MNC_LLM_BASE_URL=<url>` (for `local`/`custom`), or the `--llm` /
+`--llm-model` / `--llm-api-key` / `--llm-base-url` CLI flags. With nothing
+configured, the heuristic fallback is used automatically.
 
 ## Usage
 
@@ -102,7 +115,9 @@ Outputs `<name>.musicxml` and `<name>.mid` next to the input (or into
 - `--no-lyrics` / `--no-structure` / `--no-dedup` — turn off lyric
   transcription, section labeling, or repeat collapsing
 - `--whisper-model medium` — larger Whisper model for better lyrics (default: small)
-- `--llm anthropic|openai|none`, `--llm-model <name>` — structure-analysis LLM
+- `--llm <provider>|none`, `--llm-model <name>`, `--llm-api-key <key>`,
+  `--llm-base-url <url>` — structure-analysis LLM (see "LLM-powered structure
+  analysis" above for the supported provider ids)
 
 ## Project structure
 

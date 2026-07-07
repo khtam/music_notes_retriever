@@ -28,9 +28,10 @@ class Options:
     structure: bool = True              # label verse/chorus/bridge sections
     dedup_repeats: bool = True          # collapse near-identical repeated sections
     whisper_model: str = "small"        # faster-whisper size: tiny/base/small/medium/large-v3
-    llm_provider: Optional[str] = None  # anthropic | openai | none; None = auto-detect from env
+    llm_provider: Optional[str] = None  # a mnc.llm.PROVIDERS id, or none; None = auto-detect from env
     llm_model: Optional[str] = None
     llm_api_key: Optional[str] = None   # per-request key (web form); beats the environment
+    llm_base_url: Optional[str] = None  # endpoint override, for local/custom OpenAI-compatible servers
 
 
 def slugify(text: str) -> str:
@@ -113,7 +114,9 @@ def run(
             from .structure import analyze_structure
 
             try:
-                llm = get_llm_client(options.llm_provider, options.llm_model, options.llm_api_key)
+                llm = get_llm_client(
+                    options.llm_provider, options.llm_model, options.llm_api_key, options.llm_base_url
+                )
             except LLMError as exc:
                 report(f"LLM unavailable ({exc}); using heuristic structure analysis")
                 llm = None

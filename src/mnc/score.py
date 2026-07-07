@@ -258,6 +258,13 @@ def build_score(
                 element = note.Note(pitches[0])
             else:
                 element = chord.Chord(pitches)
+            # music21 attaches an explicit natural accidental to every white-key
+            # pitch built from a MIDI int. Dropping it lets makeAccidentals show
+            # a natural only when it actually cancels a prior sharp/flat in the
+            # bar, instead of on every diatonic note.
+            for p in element.pitches:
+                if p.accidental is not None and p.accidental.name == "natural":
+                    p.accidental = None
             element.quarterLength = dur
             part.insert(onset, element)
             if part is right:

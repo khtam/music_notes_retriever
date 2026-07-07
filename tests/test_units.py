@@ -400,5 +400,43 @@ class TestBuildScoreExtras(unittest.TestCase):
         self.assertEqual(len(full_summary), 3)
 
 
+class TestAccidentals(unittest.TestCase):
+    def _events(self, beat_specs, tempo=120.0):
+        beat = 60.0 / tempo
+        return [
+            NoteEvent(start=b * beat, end=(b + 0.8) * beat, pitch=p, amplitude=0.5)
+            for b, p in beat_specs
+        ]
+
+    def _displayed_accidentals(self, score):
+        return [
+            p.accidental.name
+            for part in score.parts
+            for n in part.flatten().notes
+            for p in n.pitches
+            if p.accidental is not None and p.accidental.displayStatus
+        ]
+
+    def test_diatonic_melody_has_no_naturals(self):
+        # All white keys, spanning octaves (like "Twinkle Twinkle"): a
+        # diatonic melody should carry zero displayed accidentals.
+        events = self._events([
+            (0, 60), (1, 60), (2, 67), (3, 67),
+            (4, 69), (5, 69), (6, 67),
+        ])
+        score, _, _, _ = build_score(events, tempo_bpm=120.0)
+        self.assertEqual(self._displayed_accidentals(score), [])
+
+    def test_necessary_natural_still_shown(self):
+        # F#4 followed by F-natural4 in the same measure: the cancelling
+        # natural must still be engraved even though spurious ones are not.
+        events = self._events([(0, 66), (1, 65), (2, 60), (3, 72)])
+        score, _, _, _ = build_score(events, tempo_bpm=120.0)
+        accidentals = self._displayed_accidentals(score)
+        self.assertIn("sharp", accidentals)
+        self.assertIn("natural", accidentals)
+        self.assertEqual(accidentals.count("natural"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

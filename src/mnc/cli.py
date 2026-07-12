@@ -63,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="Skip verse/chorus section labeling")
     t.add_argument("--no-dedup", action="store_true",
                    help="Engrave repeated sections in full instead of collapsing them")
+    t.add_argument("--no-chords", action="store_true",
+                   help="Skip chord symbol detection")
     t.add_argument("--whisper-model", default="small", metavar="SIZE",
                    choices=["tiny", "base", "small", "medium", "large-v3"],
                    help="faster-whisper model for lyrics: tiny/base/small/medium/large-v3 (default: small)")
@@ -120,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         lyrics_text=lyrics_text,
         structure=not args.no_structure,
         dedup_repeats=not args.no_dedup,
+        chords=not args.no_chords,
         whisper_model=args.whisper_model,
         llm_provider=args.llm,
         llm_model=args.llm_model,
@@ -140,6 +143,8 @@ def main(argv: list[str] | None = None) -> int:
     if info.n_lyric_words:
         details = ", ".join(x for x in (info.lyrics_language, info.lyrics_source) if x)
         print(f"  lyrics: {info.n_lyric_words} words" + (f" ({details})" if details else ""))
+    if info.n_chord_symbols:
+        print(f"  chords: {info.n_chord_symbols} symbols")
     if info.sections:
         method = f" [{info.structure_method}]" if info.structure_method else ""
         print(f"  structure{method}:")

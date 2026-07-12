@@ -27,6 +27,7 @@ class Options:
     lyrics_text: Optional[str] = None   # user-supplied lyrics; replaces Whisper's words
     structure: bool = True              # label verse/chorus/bridge sections
     dedup_repeats: bool = True          # collapse near-identical repeated sections
+    chords: bool = True                 # detect and engrave chord symbols
     whisper_model: str = "small"        # faster-whisper size: tiny/base/small/medium/large-v3
     llm_provider: Optional[str] = None  # a mnc.llm.PROVIDERS id, or none; None = auto-detect from env
     llm_model: Optional[str] = None
@@ -139,6 +140,7 @@ def run(
             dedup=options.dedup_repeats,
             structure_method=structure_method,
             lyrics_source=lyrics_source if want_lyrics else "",
+            chords=options.chords,
         )
     report("Done")
     return info

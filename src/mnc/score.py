@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from .chords import chord_figure, detect_chords
 from .transcribe import NoteEvent
 
 if TYPE_CHECKING:
@@ -52,6 +53,7 @@ class ScoreInfo:
     n_lyric_words: int = 0
     lyrics_language: str = ""
     lyrics_source: str = ""  # "transcribed" | "aligned to vocals" | "mapped to melody notes"
+    n_chord_symbols: int = 0
 
 
 def _quantize(
@@ -188,6 +190,7 @@ def build_score(
     lyrics: Optional["Lyrics"] = None,
     sections: Optional[list["Section"]] = None,
     dedup: bool = True,
+    chords: bool = True,
 ):
     """Build a two-staff piano music21 Score.
 
@@ -199,6 +202,7 @@ def build_score(
         chord,
         clef,
         expressions,
+        harmony,
         instrument,
         key,
         layout,
@@ -333,6 +337,13 @@ def build_score(
     for part in (right, left):
         part.insert(0, signature)
 
+    if chords and quantized:
+        prefer_sharps = signature.sharps >= 0
+        for dc in detect_chords(quantized):
+            if dc.offset_beats < total_beats:
+                figure = chord_figure(dc.root_pc, dc.quality, prefer_sharps)
+                right.insert(dc.offset_beats, harmony.ChordSymbol(figure))
+
     brace = layout.StaffGroup([right, left], name="Piano", symbol="brace")
     brace.barTogether = True
     score.insert(0, brace)
@@ -342,6 +353,15 @@ def build_score(
     with contextlib.redirect_stderr(io.StringIO()):
         notated = score.makeNotation(inPlace=False)
     return notated, key_name, section_summary, n_lyric_words
+
+
+def _strip_chord_symbols(score) -> None:
+    """Remove ChordSymbol objects in place. music21's MIDI export doesn't skip
+    Harmony objects (they're a Chord subclass), so left in place they'd add
+    audible blips to the .mid; MusicXML export already ignores them
+    (writeAsChord=False), so this only needs to run before the MIDI write."""
+    for cs in list(score.recurse().getElementsByClass("ChordSymbol")):
+        cs.activeSite.remove(cs)
 
 
 def export_score(
@@ -356,6 +376,7 @@ def export_score(
     dedup: bool = True,
     structure_method: str = "",
     lyrics_source: str = "",
+    chords: bool = True,
 ) -> ScoreInfo:
     output_dir.mkdir(parents=True, exist_ok=True)
     score, key_name, section_summary, n_lyric_words = build_score(
@@ -366,11 +387,15 @@ def export_score(
         lyrics=lyrics,
         sections=sections,
         dedup=dedup,
+        chords=chords,
     )
+
+    n_chord_symbols = len(score.recurse().getElementsByClass("ChordSymbol"))
 
     musicxml_path = output_dir / f"{basename}.musicxml"
     midi_path = output_dir / f"{basename}.mid"
     score.write("musicxml", fp=str(musicxml_path))
+    _strip_chord_symbols(score)
     score.write("midi", fp=str(midi_path))
 
     duration = max((ev.end for ev in events), default=0.0)
@@ -387,4 +412,5 @@ def export_score(
         n_lyric_words=n_lyric_words,
         lyrics_language=(lyrics.language if lyrics else ""),
         lyrics_source=(lyrics_source if n_lyric_words else ""),
+        n_chord_symbols=n_chord_symbols,
     )

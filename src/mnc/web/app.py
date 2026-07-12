@@ -46,6 +46,7 @@ class Job:
     n_lyric_words: int = 0
     lyrics_language: str = ""
     lyrics_source: str = ""
+    n_chord_symbols: int = 0
     musicxml_path: Optional[str] = field(default=None, repr=False)
     midi_path: Optional[str] = field(default=None, repr=False)
 
@@ -92,6 +93,7 @@ def _run_job(job: Job, source: str, options: Options) -> None:
             n_lyric_words=info.n_lyric_words,
             lyrics_language=info.lyrics_language,
             lyrics_source=info.lyrics_source,
+            n_chord_symbols=info.n_chord_symbols,
             musicxml_path=str(info.musicxml_path),
             midi_path=str(info.midi_path),
         )

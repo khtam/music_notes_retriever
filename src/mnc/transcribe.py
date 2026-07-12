@@ -20,6 +20,16 @@ import numpy as np
 PIANO_MIN_HZ = 27.5
 PIANO_MAX_HZ = 4186.0
 
+# Tempo estimation: librosa's beat tracker frequently locks onto a
+# subharmonic/harmonic of the true beat (typically 2x on slow ballads with
+# strong subdivided percussion). Fold into a playable band first, then use
+# the Fourier tempogram to decide whether the fold-band tempo is itself an
+# octave error and should be halved.
+TEMPO_FOLD_MIN = 65.0
+TEMPO_FOLD_MAX = 190.0
+HALVING_MIN_BPM = 100.0    # only consider halving results at or above this
+SUBHARMONIC_RATIO = 0.4    # halve when strength(bpm/2) >= ratio * strength(bpm)
+
 
 @dataclass
 class NoteEvent:
@@ -44,14 +54,63 @@ def estimate_tempo(wav_path: Path) -> float:
     y, sr = librosa.load(str(wav_path), sr=None, mono=True)
     if not np.any(y):
         return 120.0
-    tempo, _beats = librosa.beat.beat_track(y=y, sr=sr)
+    return _estimate_tempo_from_signal(y, sr)
+
+
+def _estimate_tempo_from_signal(y: np.ndarray, sr: float, hop_length: int = 512) -> float:
+    import librosa
+
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
+    tempo, _beats = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, hop_length=hop_length)
     bpm = float(np.atleast_1d(tempo)[0])
     if bpm <= 0 or not np.isfinite(bpm):
         return 120.0
-    while bpm < 65:
+
+    # Fold into the playable band *before* the octave decider: halving only
+    # ever fires at >=100 BPM, so the result never drops back below the
+    # fold-min and needs re-folding (which would undo the halving).
+    while bpm < TEMPO_FOLD_MIN:
         bpm *= 2
-    while bpm > 190:
+    while bpm > TEMPO_FOLD_MAX:
         bpm /= 2
+
+    strength = _fourier_tempo_strength(onset_env, sr, hop_length)
+    return _resolve_tempo_octave(bpm, strength)
+
+
+def _fourier_tempo_strength(onset_env: np.ndarray, sr: float, hop_length: int = 512, win_length: int = 384):
+    """Return a callable bpm -> mean |Fourier tempogram| at the nearest tempo bin."""
+    import librosa
+
+    tg = np.abs(
+        librosa.feature.fourier_tempogram(
+            onset_envelope=onset_env, sr=sr, hop_length=hop_length, win_length=win_length
+        )
+    )
+    freqs = librosa.fourier_tempo_frequencies(sr=sr, hop_length=hop_length, win_length=win_length)
+    profile = tg.mean(axis=1)
+
+    def strength(bpm: float) -> float:
+        return float(profile[int(np.argmin(np.abs(freqs - bpm)))])
+
+    return strength
+
+
+def _resolve_tempo_octave(
+    bpm: float,
+    strength,
+    min_bpm: float = HALVING_MIN_BPM,
+    ratio: float = SUBHARMONIC_RATIO,
+) -> float:
+    """Halve a fast beat-tracked tempo when the tempogram shows a strong
+    subharmonic at half the rate (a common octave error on slow songs with
+    busy subdivided percussion). `strength` is any Callable[[float], float]
+    so this is testable without audio."""
+    if bpm >= min_bpm:
+        s_full = strength(bpm)
+        s_half = strength(bpm / 2.0)
+        if s_full > 0 and s_half >= ratio * s_full:
+            return bpm / 2.0
     return bpm
 
 

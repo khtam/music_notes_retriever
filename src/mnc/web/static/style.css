@@ -87,6 +87,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); bo
 .lyrics-input textarea { margin-top: 0.3rem; }
 
 .hint { color: var(--muted); font-size: 0.85rem; margin: 0.5rem 0 0; }
+.warning { color: #8a5a00; font-size: 0.85rem; margin: 0.5rem 0 0; }
+.warning::before { content: "⚠ "; }
 .center { text-align: center; }
 
 .options { margin: 1.1rem 0; }

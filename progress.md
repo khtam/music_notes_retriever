@@ -1,19 +1,20 @@
 # Progress / Handoff
 
-_Last updated: 2026-07-12_
+_Last updated: 2026-07-15_
 
 ## Project state
 
 Music Notes Creator transcribes audio/video/YouTube into a two-staff piano
 score (MusicXML + MIDI) with lyrics under the melody, verse/chorus section
-labels, and (as of this session) chord symbols. Working features as of now:
+labels, and chord symbols. Working features as of now:
 
-- Note transcription (Basic Pitch), tempo estimation (now with octave-error
-  correction — see below), key detection, quantization, treble/bass split,
-  repeat collapsing ("Chorus: play mm. X–Y").
-- **Chord symbol detection** (new this session): per-measure template
-  matching over the quantized note grid, engraved as music21 `ChordSymbol`s
-  in the treble part. See "Just completed" below.
+- Note transcription (Basic Pitch), tempo estimation (with octave-error
+  correction), key detection, quantization, treble/bass split, repeat
+  collapsing ("Chorus: play mm. X–Y").
+- **Chord symbol detection**: per-measure template matching over the
+  quantized note grid, engraved as music21 `ChordSymbol`s in the treble
+  part and surfaced in the web UI as a count alongside lyrics/section info.
+  See "Prior session (2026-07-12)" below for the detection design.
 - Lyrics via faster-whisper (no VAD — it rejects singing; per-segment
   hallucination filters instead), or **user-provided lyrics text** aligned
   onto Whisper's timing (`align_user_lyrics`) or, on alignment failure,
@@ -40,7 +41,7 @@ labels, and (as of this session) chord symbols. Working features as of now:
   transcribes a real 330s track and checks the score against a hand-read
   reference sheet — see below.
 
-## Just completed: tempo octave fix, chord symbols, e2e test (this session)
+## Prior session (2026-07-12): tempo octave fix, chord symbols, e2e test
 
 **Why:** The user pointed at a concrete quality gap — transcribing
 `【降服 ⧸ Surrender】…男key.mp3` (a 330s ballad) produced a score that didn't
@@ -118,8 +119,8 @@ currently-active chord.
 - `src/mnc/cli.py` — new `--no-chords` flag; summary print adds
   `chords: N symbols` when nonzero.
 - `src/mnc/web/app.py` — `Job.n_chord_symbols: int = 0` added and populated
-  from `info.n_chord_symbols` in `_run_job` (backend plumbing only — no
-  frontend display was added, see "Not yet verified").
+  from `info.n_chord_symbols` in `_run_job` (backend plumbing only in this
+  session — the frontend display was added in the 2026-07-15 session below).
 - `tests/test_tempo.py` (new, 8 tests) — `TestResolveTempoOctave` (pure,
   dict-backed strength fakes covering the real measured ratios, the
   min-bpm gate, the exact-ratio boundary, and a divide-by-zero guard) +
@@ -192,23 +193,6 @@ currently-active chord.
 
 **Not yet verified:**
 
-- **Visual/OSMD check**: never opened `mnc serve` in a browser to confirm
-  the bundled OpenSheetMusicDisplay (v1.9.0, in
-  `src/mnc/web/static/opensheetmusicdisplay.min.js`) actually renders the
-  `<harmony>` elements as chord symbols above the staff. This is expected
-  to work (OSMD has supported `<harmony>` since 0.9) but wasn't eyeballed.
-  Recommended next step: `mnc serve --port 8765`, load the Surrender
-  MusicXML, confirm chord symbols appear above the treble staff at the
-  right measures.
-- **`--no-chords` CLI flag**: added and unit-checked that `Options(chords=
-  False)` flows through correctly, but the actual `argparse` path
-  (`mnc transcribe ... --no-chords`) was never invoked end-to-end.
-- **`n_chord_symbols` in the web UI**: the field was added to the backend
-  `Job` dataclass and populated, but no frontend display was added in
-  `index.html`/`app.js` (out of scope for this session — the goal was the
-  detection/engraving feature, not a UI surface for it). If the web UI
-  should show a chord count alongside the existing lyrics/section info,
-  that's a small follow-up in `app.js`'s job-result rendering.
 - **Generalization to other songs**: all chord-detection thresholds
   (`CONF_MIN=0.30`, `MIN_WEIGHT=1.0`, `BASS_BONUS=0.25`) were calibrated
   against this one real track. Not verified against a second real-world
@@ -224,20 +208,81 @@ currently-active chord.
   11 non-Anthropic LLM providers with a *valid* key (all provider testing
   to date used deliberately invalid keys to exercise fallback paths).
 
+## Just completed: chord-symbol/lyric-fallback UI surfacing + verification (2026-07-15)
+
+**Why:** The prior session's handoff flagged the OSMD chord-symbol rendering
+as never visually confirmed (highest-priority open item), the `--no-chords`
+CLI flag as never invoked end-to-end, and `n_chord_symbols` as backend-only
+with no UI surface. The user picked "small UI polish" + "verification pass"
+from the follow-up list (deferred: syllabification, exposing the
+anchor-fraction threshold).
+
+**Changes (`src/mnc/web/static/`):**
+- `app.js` — `renderResult()`: appends `"N chord symbols"` to the meta line
+  when `job.n_chord_symbols` is nonzero; shows a new `#result-warning`
+  element when `job.lyrics_source === "mapped to melody notes"` (the
+  onset-fallback path, set in `pipeline.py`), explaining that timing is
+  approximate because vocal alignment failed.
+- `index.html` — added `<p id="result-warning" class="warning hidden">`
+  next to the existing `#result-structure` line.
+- `style.css` — new `.warning` rule (amber `#8a5a00`, `⚠` prefix via
+  `::before`), sibling to the existing `.hint` rule.
+- No backend changes — `n_chord_symbols` and `lyrics_source` were already in
+  `Job.public()` (`src/mnc/web/app.py`).
+
+**Verification done:**
+- Full suite: `.venv/bin/python -m unittest discover tests` → 93/93, no
+  regressions (frontend-only change).
+- `--no-chords` end-to-end: `mnc transcribe tests/twinkle.wav --no-chords
+  --no-lyrics --no-structure` → summary omits the `chords:` line; output
+  MusicXML has 0 `<harmony>` elements. Control run without the flag →
+  `chords: 4 symbols` printed, 4 `<harmony>` elements in the XML.
+- Browser pass (`mnc serve --port 8765`, driven via claude-in-chrome per the
+  `verify` skill's DataTransfer recipe): submitted `twinkle.wav` with pasted
+  lyrics and `llm=false`, which deterministically lands on
+  `lyrics_source: "mapped to melody notes"`. Single screenshot confirmed all
+  three things at once: "4 chord symbols" in the meta line, the amber
+  warning banner, and OSMD rendering "C" / "Dsus4" / "Dm7" chord symbols
+  above the treble staff.
+- **Surrender OSMD chord rendering** (the original unverified item): loaded
+  the already-generated `tests/out/e2e_surrender/*.musicxml` (75 `<harmony>`
+  elements, all 7 root pitch classes present) directly through OSMD in a
+  fresh tab (bypassing a 330 s re-transcription). Confirmed Dmaj7, F♯m7,
+  Bm7, A, Amaj7, Asus4 render correctly above the treble staff at ♩=65,
+  A major (3♯), grand staff — matches the reference sheet's key/tempo and
+  overlaps its chord vocabulary.
+- Cleaned up: temp files copied into `static/` for the browser test, and the
+  test job directory under `~/.cache/music-notes-creator/jobs/`, were
+  removed after verification; the dev server was stopped.
+
+**Not yet verified:**
+
+- **Warning-hidden path**: only screenshot-tested the case where
+  `#result-warning` becomes visible (`lyrics_source: "mapped to melody
+  notes"`). Never submitted a job with `lyrics_source: "aligned to vocals"`
+  or `"transcribed"` through the actual UI to confirm the element stays
+  hidden/empty in the normal case — the hide branch is a two-line mirror of
+  the existing `#result-structure` pattern, so low risk, but unobserved.
+- **Zero-chord-count path in the browser**: `--no-chords` was verified via
+  the CLI (see above) but never submitted as a browser job, so the meta line
+  omitting "N chord symbols" when `n_chord_symbols` is 0 was checked by code
+  inspection (`if (job.n_chord_symbols)`) rather than a live screenshot.
+- **Surrender chord rendering bypassed the job pipeline**: the 75-chord
+  visual check loaded `tests/out/e2e_surrender/*.musicxml` directly into a
+  fresh OSMD instance via `javascript_tool`, not through a real `/api/jobs`
+  submission + `renderResult()` — so the meta-line chord count and warning
+  banner were never seen together on the real Surrender track in the actual
+  UI (would require a ~330s live transcription job to close this gap).
+
 ## Possible follow-ups
 
-- Visual OSMD chord-symbol check in the browser (highest priority — the
-  only unverified part of the actual rendering path for this session's
-  main feature).
 - Second real-song calibration pass for the chord-detection thresholds.
-- Surface `n_chord_symbols` in the web UI if wanted.
 - Real-key smoke test against a non-Anthropic LLM provider (carried over).
 - Real-track accidental sanity check on a second chromatic song (carried
   over).
 - Aligned-to-vocals lyrics on a real vocal track (carried over).
 - Syllabification: split multi-syllable words across tied/melisma notes
   (currently one word per note).
-- Show a warning in the UI when the melody-note lyric fallback fired.
 - Expose the anchor-fraction threshold as an option if real-world tracks
   fall back too eagerly.
 

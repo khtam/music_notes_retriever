@@ -185,7 +185,18 @@ async function renderResult(job) {
     const details = [job.lyrics_language, job.lyrics_source].filter(Boolean).join(", ");
     meta.push(`${job.n_lyric_words} lyric words` + (details ? ` (${details})` : ""));
   }
+  if (job.n_chord_symbols) meta.push(`${job.n_chord_symbols} chord symbols`);
   $("#result-meta").textContent = meta.join("  ·  ");
+
+  const warningEl = $("#result-warning");
+  if (job.lyrics_source === "mapped to melody notes") {
+    warningEl.textContent =
+      "Lyric timing is approximate: vocal alignment failed, so words were placed one per melody note.";
+    warningEl.classList.remove("hidden");
+  } else {
+    warningEl.classList.add("hidden");
+    warningEl.textContent = "";
+  }
 
   const structureEl = $("#result-structure");
   if (job.sections && job.sections.length) {
